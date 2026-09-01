@@ -42,7 +42,7 @@ pip install numpy matplotlib
 
 2. **Run the application:**
    ```bash
-   python interface.py
+   python main.py
    ```
 
 ---
