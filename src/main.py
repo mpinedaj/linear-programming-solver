@@ -37,7 +37,17 @@ class LinearProgrammingApp:
         self.num_restr_spin.set(2)
         self.num_restr_spin.grid(row=1, column=1, padx=5, pady=2)
 
-        ttk.Button(config_group, text="Generar Tabla", command=self.generar_campos).grid(row=2, column=0, columnspan=2, pady=10)
+        ttk.Label(config_group, text="Método:").grid(row=2, column=0, sticky=tk.W)
+        self.metodo_combo = ttk.Combobox(config_group, values=["Simplex", "Gráfico"], state="readonly", width=10)
+        self.metodo_combo.set("Simplex")
+        self.metodo_combo.grid(row=2, column=1, padx=5, pady=2)
+
+        ttk.Label(config_group, text="Objetivo:").grid(row=3, column=0, sticky=tk.W)
+        self.objetivo_combo = ttk.Combobox(config_group, values=["Maximizar", "Minimizar"], state="readonly", width=10)
+        self.objetivo_combo.set("Maximizar")
+        self.objetivo_combo.grid(row=3, column=1, padx=5, pady=2)
+
+        ttk.Button(config_group, text="Generar Campos", command=self.generar_campos).grid(row=4, column=0, columnspan=2, pady=10)
 
         self.inputs_frame = ttk.Frame(self.left_frame)
         self.inputs_frame.pack(fill=tk.BOTH, expand=True)
@@ -55,7 +65,7 @@ class LinearProgrammingApp:
         n_restr = int(self.num_restr_spin.get())
 
         # Función Objetivo
-        obj_frame = ttk.LabelFrame(self.inputs_frame, text=" Función Objetivo (Max Z) ", padding="10")
+        obj_frame = ttk.LabelFrame(self.inputs_frame, text=" Función Objetivo (Z) ", padding="10")
         obj_frame.pack(fill=tk.X, pady=5)
 
         for j in range(n_vars):
@@ -93,7 +103,7 @@ class LinearProgrammingApp:
             })
 
         # Botón Resolver
-        ttk.Button(self.inputs_frame, text="🚀 Resolver Problema", command=self.resolver).pack(fill=tk.X, pady=10)
+        ttk.Button(self.inputs_frame, text="Resolver Problema", command=self.resolver).pack(fill=tk.X, pady=10)
 
     def resolver(self):
         try:
@@ -107,40 +117,100 @@ class LinearProgrammingApp:
                 restricciones.append({"coef": coefs, "op": op, "val": val})
 
             num_vars = len(objetivo)
+            metodo = self.metodo_combo.get()
+            objetivo_tipo = self.objetivo_combo.get()
 
+            # Limpiar panel derecho
             for widget in self.right_frame.winfo_children():
                 widget.destroy()
 
-            # Ejecutar Simplex 
-            res_simplex = solver_simplex_method(objetivo, restricciones)
+            if metodo == "Simplex":
+                if objetivo_tipo == "Minimizar":
+                    messagebox.showerror("Aviso", "El método simplex de este código está diseñado solo para Maximizar.")
+                    return
+                
+                res_simplex = solver_simplex_method(objetivo, restricciones)
 
-            if res_simplex is None:
-                messagebox.showerror("Error", "No se encontró solución factible o el problema es no acotado.")
-                return
+                if res_simplex is None:
+                    messagebox.showerror("Error", "No se encontró solución factible o el problema es no acotado.")
+                    return
 
-            self._mostrar_resultados_texto(res_simplex, num_vars)
+                self._mostrar_iteraciones_simplex(res_simplex, num_vars, len(restricciones))
 
-            # Para dos variables se hace metodo grafico
-            if num_vars == 2:
-                res_grafico = solver_graphic_method(objetivo, restricciones)
-                if res_grafico:
-                    self._graficar_2d(res_grafico)
+            elif metodo == "Gráfico":
+                if num_vars != 2:
+                    messagebox.showerror("Error", "El método gráfico solo se puede utilizar con exactamente 2 variables.")
+                    return
+                
+                maximizar = (objetivo_tipo == "Maximizar")
+                res_grafico = solver_graphic_method(objetivo, restricciones, maximizar=maximizar)
+                
+                if res_grafico is None or len(res_grafico["puntos_factibles"]) == 0:
+                    messagebox.showerror("Error", "No existe una región factible para estas restricciones.")
+                    return
+                
+                self._mostrar_resultados_texto(res_grafico, num_vars, objetivo_tipo)
+                self._graficar_2d(res_grafico)
 
         except ValueError:
             messagebox.showerror("Error de Input", "Por favor ingresa valores numéricos válidos en todos los campos.")
 
-    def _mostrar_resultados_texto(self, res_simplex, num_vars):
+    def _mostrar_resultados_texto(self, resultados, num_vars, tipo_optimizacion):
         output_frame = ttk.LabelFrame(self.right_frame, text=" Resultados ", padding="10")
         output_frame.pack(fill=tk.X, pady=5)
 
-        pt_optimo = res_simplex["punto_optimo"]
-        z_val = res_simplex["valor_optimo"]
+        pt_optimo = resultados["punto_optimo"]
+        z_val = resultados["valor_optimo"]
 
         vars_str = ", ".join([f"x{i+1} = {pt_optimo[i]:.2f}" for i in range(num_vars)])
-        res_text = f" Valor Óptimo (Z): {z_val:.2f}\n Variables: {vars_str}"
+        res_text = f" Valor Óptimo ({tipo_optimizacion} Z): {z_val:.2f}\n Variables: {vars_str}"
 
         lbl = ttk.Label(output_frame, text=res_text, font=("Helvetica", 11, "bold"), foreground="green")
         lbl.pack(anchor=tk.W)
+
+    def _mostrar_iteraciones_simplex(self, res_simplex, num_vars, num_restr):
+        output_frame = ttk.LabelFrame(self.right_frame, text=" Resultados y Tablas Simplex ", padding="10")
+        output_frame.pack(fill=tk.BOTH, expand=True, pady=5)
+
+        pt_optimo = res_simplex["punto_optimo"]
+        z_val = res_simplex["valor_optimo"]
+        vars_str = ", ".join([f"x{i+1} = {pt_optimo[i]:.2f}" for i in range(num_vars)])
+        lbl = ttk.Label(output_frame, text=f"Z Óptimo: {z_val:.2f} | Variables: {vars_str}", 
+                        font=("Helvetica", 11, "bold"), foreground="green")
+        lbl.pack(anchor=tk.W, pady=(0, 10))
+
+        text_frame = ttk.Frame(output_frame)
+        text_frame.pack(fill=tk.BOTH, expand=True)
+
+        scrollbar_y = ttk.Scrollbar(text_frame, orient=tk.VERTICAL)
+        scrollbar_y.pack(side=tk.RIGHT, fill=tk.Y)
+        
+        scrollbar_x = ttk.Scrollbar(text_frame, orient=tk.HORIZONTAL)
+        scrollbar_x.pack(side=tk.BOTTOM, fill=tk.X)
+
+        text_area = tk.Text(text_frame, wrap=tk.NONE, font=("Courier", 10), 
+                            yscrollcommand=scrollbar_y.set, xscrollcommand=scrollbar_x.set)
+        text_area.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        
+        scrollbar_y.config(command=text_area.yview)
+        scrollbar_x.config(command=text_area.xview)
+
+        iteraciones = res_simplex["iteraciones"]
+        
+        headers = [f"x{i+1}" for i in range(num_vars)] + [f"s{i+1}" for i in range(num_restr)] + ["CR"]
+        header_str = " | ".join([f"{h:>8}" for h in headers])
+
+        for idx, tabla in enumerate(iteraciones):
+            text_area.insert(tk.END, f"--- Iteración {idx} ---\n")
+            text_area.insert(tk.END, header_str + "\n")
+            text_area.insert(tk.END, "-" * len(header_str) + "\n")
+            
+            for row in tabla:
+                row_str = " | ".join([f"{val:8.2f}" for val in row])
+                text_area.insert(tk.END, row_str + "\n")
+            text_area.insert(tk.END, "\n")
+        
+        text_area.config(state=tk.DISABLED)
 
     def _graficar_2d(self, res_grafico):
         fig, ax = plt.subplots(figsize=(6, 5))
@@ -183,9 +253,7 @@ class LinearProgrammingApp:
 
 #----------------------------------------------------------------------------------------------------------------------------------------
 
-#Funcion para el metodo grafico
 def solver_graphic_method(objetivo: list[float], restricciones: list[dict], maximizar: bool = True):
-    
     # Se le pone no negatividad
     restricciones_completas = restricciones + [
         {"coef": [1.0, 0.0], "op": ">=", "val": 0.0},
@@ -193,8 +261,8 @@ def solver_graphic_method(objetivo: list[float], restricciones: list[dict], maxi
     ]
     
     cant_restricciones = len(restricciones_completas)
-    
     puntos = []
+    
     # Mira las restricciones y despues las mete en puntos
     for i in range(cant_restricciones):
         for j in range(i + 1, cant_restricciones):
@@ -209,8 +277,8 @@ def solver_graphic_method(objetivo: list[float], restricciones: list[dict], maxi
     puntos_factibles = []
     for pt in puntos:
         x1, x2 = pt
-        
-        if x1 < 0 or x2 < 0:
+        # Ajuste de tolerancia para evitar descartar puntos válidos por decimales
+        if x1 < -1e-9 or x2 < -1e-9:
             continue
         
         valid = True
@@ -219,20 +287,20 @@ def solver_graphic_method(objetivo: list[float], restricciones: list[dict], maxi
             op = r["op"]
             target = r["val"]
 
-            if op == "<=" and val > target:
+            if op == "<=" and val > target + 1e-9:
                 valid = False; break
-            elif op == ">=" and val < target:
+            elif op == ">=" and val < target - 1e-9:
                 valid = False; break
-            elif op == "=" and val != target:
+            elif op == "=" and abs(val - target) > 1e-9:
                 valid = False; break
 
         if valid:
             puntos_factibles.append(pt)
 
-    puntos_factibles = np.array(puntos_factibles)
     if len(puntos_factibles) == 0:
         return None
-    
+        
+    puntos_factibles = np.array(puntos_factibles)
     z_valores = []  
     for p in puntos_factibles:
         z = objetivo[0] * p[0] + objetivo[1] * p[1]
@@ -255,7 +323,6 @@ def solver_graphic_method(objetivo: list[float], restricciones: list[dict], maxi
    
 #----------------------------------------------------------------------------------------------------------------------------------------  
  
-# Funcion para el metodo simplex
 def solver_simplex_method(objetivo: list[float], restricciones: list[dict]):
     num_vars = len(objetivo)
     num_restr = len(restricciones)
@@ -271,10 +338,15 @@ def solver_simplex_method(objetivo: list[float], restricciones: list[dict]):
     # Fila de Z
     tabla[-1, :num_vars] = [-c for c in objetivo]
 
+    iteraciones = []
+    # Guardar estado inicial
+    iteraciones.append(tabla.copy())
+
     while True:
         fila_z = tabla[-1, :-1]
 
-        if np.all(fila_z >= 0):
+        # Tolerancia para problemas de coma flotante
+        if np.all(fila_z >= -1e-9):
             break
 
         # Columna pivote
@@ -286,7 +358,7 @@ def solver_simplex_method(objetivo: list[float], restricciones: list[dict]):
 
         cocientes = []
         for i in range(num_restr):
-            if col_valores[i] > 0:
+            if col_valores[i] > 1e-9:
                 cocientes.append(lados_derechos[i] / col_valores[i])
             else:
                 cocientes.append(np.inf) 
@@ -303,13 +375,18 @@ def solver_simplex_method(objetivo: list[float], restricciones: list[dict]):
             if i != fila_pivote:
                 factor = tabla[i, col_pivote]
                 tabla[i, :] -= factor * tabla[fila_pivote, :]
+                
+        iteraciones.append(tabla.copy())
 
     solucion_vars = np.zeros(num_vars)
     
     for j in range(num_vars):
         columna = tabla[:, j]
-        if np.count_nonzero(columna == 1) == 1 and np.count_nonzero(columna == 0) == len(columna) - 1:
-            fila_uno = np.where(columna == 1)[0][0]
+        es_uno = np.isclose(columna, 1.0)
+        es_cero = np.isclose(columna, 0.0)
+        
+        if np.count_nonzero(es_uno) == 1 and np.count_nonzero(es_cero) == len(columna) - 1:
+            fila_uno = np.where(es_uno)[0][0]
             if fila_uno < num_restr:
                 solucion_vars[j] = tabla[fila_uno, -1]
 
@@ -318,7 +395,7 @@ def solver_simplex_method(objetivo: list[float], restricciones: list[dict]):
     return {
         "punto_optimo": solucion_vars,
         "valor_optimo": valor_z_optimo,
-        "tabla_final": tabla
+        "iteraciones": iteraciones 
     }
 
 if __name__ == "__main__":
