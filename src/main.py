@@ -3,16 +3,15 @@ from tkinter import ttk, messagebox
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
-from simplexSolver import solver_simplex_method
-from graphicSolver import solver_graphic_method
 
+# Interfaz
 class LinearProgrammingApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("Solver de Programación Lineal (Gráfico y Simplex)")
+        self.root.title("Solver de Programación Lineal (Grafico y Simplex)")
         self.root.geometry("1100x700")
 
-        # Contenedor principal con dos columnas
+        # Dos columnas
         self.left_frame = ttk.Frame(self.root, padding="10")
         self.left_frame.pack(side=tk.LEFT, fill=tk.Y)
 
@@ -25,7 +24,6 @@ class LinearProgrammingApp:
         self._build_configuration_panel()
 
     def _build_configuration_panel(self):
-        # Panel de Configuración
         config_group = ttk.LabelFrame(self.left_frame, text=" Configuración Inicial ", padding="10")
         config_group.pack(fill=tk.X, pady=5)
 
@@ -41,14 +39,12 @@ class LinearProgrammingApp:
 
         ttk.Button(config_group, text="Generar Tabla", command=self.generar_campos).grid(row=2, column=0, columnspan=2, pady=10)
 
-        # Contenedor dinámico de inputs
         self.inputs_frame = ttk.Frame(self.left_frame)
         self.inputs_frame.pack(fill=tk.BOTH, expand=True)
 
         self.generar_campos()
 
     def generar_campos(self):
-        # Limpiar inputs previos
         for widget in self.inputs_frame.winfo_children():
             widget.destroy()
 
@@ -58,7 +54,7 @@ class LinearProgrammingApp:
         n_vars = int(self.num_vars_spin.get())
         n_restr = int(self.num_restr_spin.get())
 
-        # 1. Función Objetivo
+        # Función Objetivo
         obj_frame = ttk.LabelFrame(self.inputs_frame, text=" Función Objetivo (Max Z) ", padding="10")
         obj_frame.pack(fill=tk.X, pady=5)
 
@@ -69,7 +65,7 @@ class LinearProgrammingApp:
             e.grid(row=0, column=j*2+1, padx=2)
             self.entries_objetivo.append(e)
 
-        # 2. Restricciones
+        # Restricciones
         restr_frame = ttk.LabelFrame(self.inputs_frame, text=" Restricciones ", padding="10")
         restr_frame.pack(fill=tk.BOTH, expand=True, pady=5)
 
@@ -101,10 +97,8 @@ class LinearProgrammingApp:
 
     def resolver(self):
         try:
-            # Extraer función objetivo
             objetivo = [float(e.get()) for e in self.entries_objetivo]
 
-            # Extraer restricciones
             restricciones = []
             for r in self.entries_restricciones:
                 coefs = [float(e.get()) for e in r["coefs"]]
@@ -114,11 +108,10 @@ class LinearProgrammingApp:
 
             num_vars = len(objetivo)
 
-            # Limpiar panel de resultados
             for widget in self.right_frame.winfo_children():
                 widget.destroy()
 
-            # Ejecutar Simplex (Funciona para N variables)
+            # Ejecutar Simplex 
             res_simplex = solver_simplex_method(objetivo, restricciones)
 
             if res_simplex is None:
@@ -127,7 +120,7 @@ class LinearProgrammingApp:
 
             self._mostrar_resultados_texto(res_simplex, num_vars)
 
-            # Si son 2 variables, ejecutar y graficar Método Gráfico
+            # Para dos variables se hace metodo grafico
             if num_vars == 2:
                 res_grafico = solver_graphic_method(objetivo, restricciones)
                 if res_grafico:
@@ -160,7 +153,6 @@ class LinearProgrammingApp:
         max_y = max(10, np.max(puntos[:, 1]) * 1.3)
         x_vals = np.linspace(0, max_x, 200)
 
-        # Dibuja rectas
         for r in restricciones:
             a, b_coef = r["coef"]
             c = r["val"]
@@ -170,7 +162,6 @@ class LinearProgrammingApp:
             else:
                 ax.axvline(x=c / a, label=f"{a}x1 {r['op']} {c}")
 
-        # Polígono de región factible
         centro = np.mean(puntos, axis=0)
         angulos = np.arctan2(puntos[:, 1] - centro[1], puntos[:, 0] - centro[0])
         puntos_ordenados = puntos[np.argsort(angulos)]
@@ -186,11 +177,149 @@ class LinearProgrammingApp:
         ax.grid(True, linestyle='--', alpha=0.5)
         ax.legend(fontsize=8)
 
-        # Incrustar gráfico de Matplotlib dentro del Frame de Tkinter
         canvas = FigureCanvasTkAgg(fig, master=self.right_frame)
         canvas.draw()
         canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
 
+#----------------------------------------------------------------------------------------------------------------------------------------
+
+#Funcion para el metodo grafico
+def solver_graphic_method(objetivo: list[float], restricciones: list[dict], maximizar: bool = True):
+    
+    # Se le pone no negatividad
+    restricciones_completas = restricciones + [
+        {"coef": [1.0, 0.0], "op": ">=", "val": 0.0},
+        {"coef": [0.0, 1.0], "op": ">=", "val": 0.0}
+    ]
+    
+    cant_restricciones = len(restricciones_completas)
+    
+    puntos = []
+    # Mira las restricciones y despues las mete en puntos
+    for i in range(cant_restricciones):
+        for j in range(i + 1, cant_restricciones):
+            A = np.array([restricciones_completas[i]["coef"], restricciones_completas[j]["coef"]], dtype=float)
+            b = np.array([restricciones_completas[i]["val"], restricciones_completas[j]["val"]], dtype=float)
+
+            if np.linalg.matrix_rank(A) == 2:
+                pt = np.linalg.solve(A, b)
+                puntos.append(pt)
+    
+    # Ver si los puntos de interseccion estan dentro de la region factible
+    puntos_factibles = []
+    for pt in puntos:
+        x1, x2 = pt
+        
+        if x1 < 0 or x2 < 0:
+            continue
+        
+        valid = True
+        for r in restricciones_completas:
+            val = r["coef"][0] * x1 + r["coef"][1] * x2
+            op = r["op"]
+            target = r["val"]
+
+            if op == "<=" and val > target:
+                valid = False; break
+            elif op == ">=" and val < target:
+                valid = False; break
+            elif op == "=" and val != target:
+                valid = False; break
+
+        if valid:
+            puntos_factibles.append(pt)
+
+    puntos_factibles = np.array(puntos_factibles)
+    if len(puntos_factibles) == 0:
+        return None
+    
+    z_valores = []  
+    for p in puntos_factibles:
+        z = objetivo[0] * p[0] + objetivo[1] * p[1]
+        z_valores.append(z)
+        
+    if maximizar:
+        indice_optimo = np.argmax(z_valores)
+    else:
+        indice_optimo = np.argmin(z_valores)
+
+    punto_optimo = puntos_factibles[indice_optimo]
+    valor_z_optimo = z_valores[indice_optimo]
+
+    return {
+        "puntos_factibles": puntos_factibles,
+        "punto_optimo": punto_optimo,
+        "valor_optimo": valor_z_optimo,
+        "restricciones": restricciones
+    }
+   
+#----------------------------------------------------------------------------------------------------------------------------------------  
+ 
+# Funcion para el metodo simplex
+def solver_simplex_method(objetivo: list[float], restricciones: list[dict]):
+    num_vars = len(objetivo)
+    num_restr = len(restricciones)
+
+    # Crear los tableros simplex
+    tabla = np.zeros((num_restr + 1, num_vars + num_restr + 1), dtype=float)
+
+    for i, r in enumerate(restricciones):
+        tabla[i, :num_vars] = r["coef"]
+        tabla[i, num_vars + i] = 1.0
+        tabla[i, -1] = r["val"]
+
+    # Fila de Z
+    tabla[-1, :num_vars] = [-c for c in objetivo]
+
+    while True:
+        fila_z = tabla[-1, :-1]
+
+        if np.all(fila_z >= 0):
+            break
+
+        # Columna pivote
+        col_pivote = np.argmin(fila_z)
+
+        # Fila pivote
+        col_valores = tabla[:-1, col_pivote]
+        lados_derechos = tabla[:-1, -1]
+
+        cocientes = []
+        for i in range(num_restr):
+            if col_valores[i] > 0:
+                cocientes.append(lados_derechos[i] / col_valores[i])
+            else:
+                cocientes.append(np.inf) 
+
+        fila_pivote = np.argmin(cocientes)
+
+        if cocientes[fila_pivote] == np.inf:
+            return None
+
+        elemento_pivote = tabla[fila_pivote, col_pivote]
+        tabla[fila_pivote, :] /= elemento_pivote 
+
+        for i in range(len(tabla)):
+            if i != fila_pivote:
+                factor = tabla[i, col_pivote]
+                tabla[i, :] -= factor * tabla[fila_pivote, :]
+
+    solucion_vars = np.zeros(num_vars)
+    
+    for j in range(num_vars):
+        columna = tabla[:, j]
+        if np.count_nonzero(columna == 1) == 1 and np.count_nonzero(columna == 0) == len(columna) - 1:
+            fila_uno = np.where(columna == 1)[0][0]
+            if fila_uno < num_restr:
+                solucion_vars[j] = tabla[fila_uno, -1]
+
+    valor_z_optimo = tabla[-1, -1]
+
+    return {
+        "punto_optimo": solucion_vars,
+        "valor_optimo": valor_z_optimo,
+        "tabla_final": tabla
+    }
 
 if __name__ == "__main__":
     root = tk.Tk()
