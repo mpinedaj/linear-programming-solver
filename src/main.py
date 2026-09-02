@@ -4,11 +4,170 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 
-# Interfaz
+class LinearSolver:
+    def __init__(self, objetivo: list[float], restricciones: list[dict], maximizar: bool = True):
+        self.objetivo = objetivo
+        self.restricciones = restricciones
+        self.maximizar = maximizar
+
+    def resolver(self):
+        pass
+
+class GraphicSolver(LinearSolver):
+    def resolver(self):
+        restricciones_completas = self.restricciones + [
+            {"coef": [1.0, 0.0], "op": ">=", "val": 0.0},
+            {"coef": [0.0, 1.0], "op": ">=", "val": 0.0}
+        ]
+        
+        cant_restricciones = len(restricciones_completas)
+        puntos = []
+        
+        # Paso 1: Graficar las Restricciones
+        for i in range(cant_restricciones):
+            for j in range(i + 1, cant_restricciones):
+                A = np.array([restricciones_completas[i]["coef"], restricciones_completas[j]["coef"]], dtype=float)
+                b = np.array([restricciones_completas[i]["val"], restricciones_completas[j]["val"]], dtype=float)
+
+                if np.linalg.matrix_rank(A) == 2:
+                    pt = np.linalg.solve(A, b)
+                    puntos.append(pt)
+        
+        # Paso 2: Determinar la Región Factible (Filtrado de vértices válidos)
+        puntos_factibles = []
+        for pt in puntos:
+            x1, x2 = pt
+            if x1 < -1e-9 or x2 < -1e-9:
+                continue
+            
+            valid = True
+            for r in restricciones_completas:
+                val = r["coef"][0] * x1 + r["coef"][1] * x2
+                op = r["op"]
+                target = r["val"]
+
+                if op == "<=" and val > target + 1e-9:
+                    valid = False; break
+                elif op == ">=" and val < target - 1e-9:
+                    valid = False; break
+                elif op == "=" and abs(val - target) > 1e-9:
+                    valid = False; break
+
+            if valid:
+                puntos_factibles.append(pt)
+
+        if len(puntos_factibles) == 0:
+            return None
+            
+        puntos_factibles = np.array(puntos_factibles)
+        z_valores = []  
+        
+        # Paso 3: Evaluar la Función Objetivo 
+        for p in puntos_factibles:
+            z = self.objetivo[0] * p[0] + self.objetivo[1] * p[1]
+            z_valores.append(z)
+            
+        # Paso 4: Seleccionar la Solución Óptima
+        if self.maximizar:
+            indice_optimo = np.argmax(z_valores)
+        else:
+            indice_optimo = np.argmin(z_valores)
+
+        punto_optimo = puntos_factibles[indice_optimo]
+        valor_z_optimo = z_valores[indice_optimo]
+
+        return {
+            "puntos_factibles": puntos_factibles,
+            "punto_optimo": punto_optimo,
+            "valor_optimo": valor_z_optimo,
+            "restricciones": self.restricciones
+        }
+
+class SimplexSolver(LinearSolver):
+    def resolver(self):
+        num_vars = len(self.objetivo)
+        num_restr = len(self.restricciones)
+
+        # Paso 2: Construir la tabla inicial 
+        tabla = np.zeros((num_restr + 1, num_vars + num_restr + 1), dtype=float)
+
+        for i, r in enumerate(self.restricciones):
+            tabla[i, :num_vars] = r["coef"]
+            tabla[i, num_vars + i] = 1.0 
+            tabla[i, -1] = r["val"]
+
+        tabla[-1, :num_vars] = [-c for c in self.objetivo]
+
+        iteraciones = []
+        iteraciones.append(tabla.copy())
+
+        
+        while True:
+            fila_z = tabla[-1, :-1]
+
+            # Tolerancia para problemas de coma flotante (Criterio de parada)
+            if np.all(fila_z >= -1e-9):
+                break
+
+            # Paso 3: Identificar la variable entrante y la variable saliente
+            col_pivote = np.argmin(fila_z)
+
+            col_valores = tabla[:-1, col_pivote]
+            lados_derechos = tabla[:-1, -1]
+
+            cocientes = []
+            for i in range(num_restr):
+                if col_valores[i] > 1e-9:
+                    cocientes.append(lados_derechos[i] / col_valores[i])
+                else:
+                    cocientes.append(np.inf) 
+
+            fila_pivote = np.argmin(cocientes)
+
+            if cocientes[fila_pivote] == np.inf:
+                return None 
+
+            # Paso 4: Identificar el elemento pivote
+            elemento_pivote = tabla[fila_pivote, col_pivote]
+            
+            # Paso 5: Actualizar la tabla simplex (pivoteo)
+            tabla[fila_pivote, :] /= elemento_pivote 
+
+            for i in range(len(tabla)):
+                if i != fila_pivote:
+                    factor = tabla[i, col_pivote]
+                    tabla[i, :] -= factor * tabla[fila_pivote, :]
+                    
+            iteraciones.append(tabla.copy())
+
+        # Paso 7: Interpretar los resultados
+        solucion_vars = np.zeros(num_vars)
+        
+        for j in range(num_vars):
+            columna = tabla[:, j]
+            es_uno = np.isclose(columna, 1.0)
+            es_cero = np.isclose(columna, 0.0)
+            
+            if np.count_nonzero(es_uno) == 1 and np.count_nonzero(es_cero) == len(columna) - 1:
+                fila_uno = np.where(es_uno)[0][0]
+                if fila_uno < num_restr:
+                    solucion_vars[j] = tabla[fila_uno, -1]
+
+        valor_z_optimo = tabla[-1, -1]
+
+        return {
+            "punto_optimo": solucion_vars,
+            "valor_optimo": valor_z_optimo,
+            "iteraciones": iteraciones 
+        }
+
+
+# --- INTERFAZ GRÁFICA ---
+
 class LinearProgrammingApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("Solver de Programación Lineal (Grafico y Simplex)")
+        self.root.title("Solver de Programación Lineal (Gráfico y Simplex)")
         self.root.geometry("1100x700")
 
         self.left_frame = ttk.Frame(self.root, padding="10")
@@ -127,7 +286,9 @@ class LinearProgrammingApp:
                     messagebox.showerror("Aviso", "El método simplex de este código está diseñado solo para Maximizar.")
                     return
                 
-                res_simplex = solver_simplex_method(objetivo, restricciones)
+                # Usamos la nueva clase SimplexSolver
+                solver = SimplexSolver(objetivo, restricciones)
+                res_simplex = solver.resolver()
 
                 if res_simplex is None:
                     messagebox.showerror("Error", "No se encontró solución factible o el problema es no acotado.")
@@ -141,7 +302,10 @@ class LinearProgrammingApp:
                     return
                 
                 maximizar = (objetivo_tipo == "Maximizar")
-                res_grafico = solver_graphic_method(objetivo, restricciones, maximizar=maximizar)
+                
+                # Usamos la nueva clase GraphicSolver
+                solver = GraphicSolver(objetivo, restricciones, maximizar)
+                res_grafico = solver.resolver()
                 
                 if res_grafico is None or len(res_grafico["puntos_factibles"]) == 0:
                     messagebox.showerror("Error", "No existe una región factible para estas restricciones.")
@@ -250,156 +414,6 @@ class LinearProgrammingApp:
         canvas.draw()
         canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
 
-#----------------------------------------------------------------------------------------------------------------------------------------
-
-def solver_graphic_method(objetivo: list[float], restricciones: list[dict], maximizar: bool = True):
-    restricciones_completas = restricciones + [
-        {"coef": [1.0, 0.0], "op": ">=", "val": 0.0},
-        {"coef": [0.0, 1.0], "op": ">=", "val": 0.0}
-    ]
-    
-    cant_restricciones = len(restricciones_completas)
-    puntos = []
-    
-    # Paso 1: Graficar las Restricciones
-    for i in range(cant_restricciones):
-        for j in range(i + 1, cant_restricciones):
-            A = np.array([restricciones_completas[i]["coef"], restricciones_completas[j]["coef"]], dtype=float)
-            b = np.array([restricciones_completas[i]["val"], restricciones_completas[j]["val"]], dtype=float)
-
-            if np.linalg.matrix_rank(A) == 2:
-                pt = np.linalg.solve(A, b)
-                puntos.append(pt)
-    
-    # Paso 2: Determinar la Región Factible (Filtrado de vértices válidos)
-    puntos_factibles = []
-    for pt in puntos:
-        x1, x2 = pt
-        if x1 < -1e-9 or x2 < -1e-9:
-            continue
-        
-        valid = True
-        for r in restricciones_completas:
-            val = r["coef"][0] * x1 + r["coef"][1] * x2
-            op = r["op"]
-            target = r["val"]
-
-            if op == "<=" and val > target + 1e-9:
-                valid = False; break
-            elif op == ">=" and val < target - 1e-9:
-                valid = False; break
-            elif op == "=" and abs(val - target) > 1e-9:
-                valid = False; break
-
-        if valid:
-            puntos_factibles.append(pt)
-
-    if len(puntos_factibles) == 0:
-        return None
-        
-    puntos_factibles = np.array(puntos_factibles)
-    z_valores = []  
-    
-    # Paso 3: Evaluar la Función Objetivo 
-    for p in puntos_factibles:
-        z = objetivo[0] * p[0] + objetivo[1] * p[1]
-        z_valores.append(z)
-        
-    # Paso 4: Seleccionar la Solución Óptima
-    if maximizar:
-        indice_optimo = np.argmax(z_valores)
-    else:
-        indice_optimo = np.argmin(z_valores)
-
-    punto_optimo = puntos_factibles[indice_optimo]
-    valor_z_optimo = z_valores[indice_optimo]
-
-    return {
-        "puntos_factibles": puntos_factibles,
-        "punto_optimo": punto_optimo,
-        "valor_optimo": valor_z_optimo,
-        "restricciones": restricciones
-    }
-   
-#----------------------------------------------------------------------------------------------------------------------------------------  
- 
-def solver_simplex_method(objetivo: list[float], restricciones: list[dict]):
-    #Paso 1: Formular el problema en una forma estándar 
-    num_vars = len(objetivo)
-    num_restr = len(restricciones)
-
-    # Paso 2: Construir la tabla inicial 
-    tabla = np.zeros((num_restr + 1, num_vars + num_restr + 1), dtype=float)
-
-    for i, r in enumerate(restricciones):
-        tabla[i, :num_vars] = r["coef"]
-        tabla[i, num_vars + i] = 1.0 
-        tabla[i, -1] = r["val"]
-
-    tabla[-1, :num_vars] = [-c for c in objetivo]
-
-    iteraciones = []
-    iteraciones.append(tabla.copy())
-
-    # Paso 6: Repetir el proceso (Este bucle se ejecutará hasta llegar a la solución óptima) ###
-    while True:
-        fila_z = tabla[-1, :-1]
-
-        # Tolerancia para problemas de coma flotante (Criterio de parada)
-        if np.all(fila_z >= -1e-9):
-            break
-
-        # Paso 3: Identificar la variable entrante y la variable saliente ###
-        col_pivote = np.argmin(fila_z)
-
-        col_valores = tabla[:-1, col_pivote]
-        lados_derechos = tabla[:-1, -1]
-
-        cocientes = []
-        for i in range(num_restr):
-            if col_valores[i] > 1e-9:
-                cocientes.append(lados_derechos[i] / col_valores[i])
-            else:
-                cocientes.append(np.inf) 
-
-        fila_pivote = np.argmin(cocientes)
-
-        if cocientes[fila_pivote] == np.inf:
-            return None 
-
-        # Paso 4: Identificar el elemento pivote
-        elemento_pivote = tabla[fila_pivote, col_pivote]
-        
-        # Paso 5: Actualizar la tabla simplex (pivoteo) ###
-        tabla[fila_pivote, :] /= elemento_pivote 
-
-        for i in range(len(tabla)):
-            if i != fila_pivote:
-                factor = tabla[i, col_pivote]
-                tabla[i, :] -= factor * tabla[fila_pivote, :]
-                
-        iteraciones.append(tabla.copy())
-
-    # Paso 7: Interpretar los resultados
-    solucion_vars = np.zeros(num_vars)
-    
-    for j in range(num_vars):
-        columna = tabla[:, j]
-        es_uno = np.isclose(columna, 1.0)
-        es_cero = np.isclose(columna, 0.0)
-        
-        if np.count_nonzero(es_uno) == 1 and np.count_nonzero(es_cero) == len(columna) - 1:
-            fila_uno = np.where(es_uno)[0][0]
-            if fila_uno < num_restr:
-                solucion_vars[j] = tabla[fila_uno, -1]
-
-    valor_z_optimo = tabla[-1, -1]
-
-    return {
-        "punto_optimo": solucion_vars,
-        "valor_optimo": valor_z_optimo,
-        "iteraciones": iteraciones 
-    }
 
 if __name__ == "__main__":
     root = tk.Tk()
