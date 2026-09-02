@@ -11,7 +11,6 @@ class LinearProgrammingApp:
         self.root.title("Solver de Programación Lineal (Grafico y Simplex)")
         self.root.geometry("1100x700")
 
-        # Dos columnas
         self.left_frame = ttk.Frame(self.root, padding="10")
         self.left_frame.pack(side=tk.LEFT, fill=tk.Y)
 
@@ -102,7 +101,7 @@ class LinearProgrammingApp:
                 "val": val_entry
             })
 
-        # Botón Resolver
+        # Resolver
         ttk.Button(self.inputs_frame, text="Resolver Problema", command=self.resolver).pack(fill=tk.X, pady=10)
 
     def resolver(self):
@@ -120,7 +119,6 @@ class LinearProgrammingApp:
             metodo = self.metodo_combo.get()
             objetivo_tipo = self.objetivo_combo.get()
 
-            # Limpiar panel derecho
             for widget in self.right_frame.winfo_children():
                 widget.destroy()
 
@@ -238,6 +236,7 @@ class LinearProgrammingApp:
 
         ax.fill(puntos_ordenados[:, 0], puntos_ordenados[:, 1], color='lightgreen', alpha=0.4, label='Región Factible')
         ax.scatter(puntos[:, 0], puntos[:, 1], color='blue', zorder=5)
+        
         ax.scatter(optimo[0], optimo[1], color='red', s=100, zorder=6, label=f'Óptimo ({optimo[0]:.1f}, {optimo[1]:.1f})')
 
         ax.set_xlim(0, max_x)
@@ -254,7 +253,6 @@ class LinearProgrammingApp:
 #----------------------------------------------------------------------------------------------------------------------------------------
 
 def solver_graphic_method(objetivo: list[float], restricciones: list[dict], maximizar: bool = True):
-    # Se le pone no negatividad
     restricciones_completas = restricciones + [
         {"coef": [1.0, 0.0], "op": ">=", "val": 0.0},
         {"coef": [0.0, 1.0], "op": ">=", "val": 0.0}
@@ -263,7 +261,7 @@ def solver_graphic_method(objetivo: list[float], restricciones: list[dict], maxi
     cant_restricciones = len(restricciones_completas)
     puntos = []
     
-    # Mira las restricciones y despues las mete en puntos
+    # Paso 1: Graficar las Restricciones
     for i in range(cant_restricciones):
         for j in range(i + 1, cant_restricciones):
             A = np.array([restricciones_completas[i]["coef"], restricciones_completas[j]["coef"]], dtype=float)
@@ -273,11 +271,10 @@ def solver_graphic_method(objetivo: list[float], restricciones: list[dict], maxi
                 pt = np.linalg.solve(A, b)
                 puntos.append(pt)
     
-    # Ver si los puntos de interseccion estan dentro de la region factible
+    # Paso 2: Determinar la Región Factible (Filtrado de vértices válidos)
     puntos_factibles = []
     for pt in puntos:
         x1, x2 = pt
-        # Ajuste de tolerancia para evitar descartar puntos válidos por decimales
         if x1 < -1e-9 or x2 < -1e-9:
             continue
         
@@ -302,10 +299,13 @@ def solver_graphic_method(objetivo: list[float], restricciones: list[dict], maxi
         
     puntos_factibles = np.array(puntos_factibles)
     z_valores = []  
+    
+    # Paso 3: Evaluar la Función Objetivo 
     for p in puntos_factibles:
         z = objetivo[0] * p[0] + objetivo[1] * p[1]
         z_valores.append(z)
         
+    # Paso 4: Seleccionar la Solución Óptima
     if maximizar:
         indice_optimo = np.argmax(z_valores)
     else:
@@ -324,35 +324,34 @@ def solver_graphic_method(objetivo: list[float], restricciones: list[dict], maxi
 #----------------------------------------------------------------------------------------------------------------------------------------  
  
 def solver_simplex_method(objetivo: list[float], restricciones: list[dict]):
+    #Paso 1: Formular el problema en una forma estándar 
     num_vars = len(objetivo)
     num_restr = len(restricciones)
 
-    # Crear los tableros simplex
+    # Paso 2: Construir la tabla inicial 
     tabla = np.zeros((num_restr + 1, num_vars + num_restr + 1), dtype=float)
 
     for i, r in enumerate(restricciones):
         tabla[i, :num_vars] = r["coef"]
-        tabla[i, num_vars + i] = 1.0
+        tabla[i, num_vars + i] = 1.0 
         tabla[i, -1] = r["val"]
 
-    # Fila de Z
     tabla[-1, :num_vars] = [-c for c in objetivo]
 
     iteraciones = []
-    # Guardar estado inicial
     iteraciones.append(tabla.copy())
 
+    # Paso 6: Repetir el proceso (Este bucle se ejecutará hasta llegar a la solución óptima) ###
     while True:
         fila_z = tabla[-1, :-1]
 
-        # Tolerancia para problemas de coma flotante
+        # Tolerancia para problemas de coma flotante (Criterio de parada)
         if np.all(fila_z >= -1e-9):
             break
 
-        # Columna pivote
+        # Paso 3: Identificar la variable entrante y la variable saliente ###
         col_pivote = np.argmin(fila_z)
 
-        # Fila pivote
         col_valores = tabla[:-1, col_pivote]
         lados_derechos = tabla[:-1, -1]
 
@@ -366,9 +365,12 @@ def solver_simplex_method(objetivo: list[float], restricciones: list[dict]):
         fila_pivote = np.argmin(cocientes)
 
         if cocientes[fila_pivote] == np.inf:
-            return None
+            return None 
 
+        # Paso 4: Identificar el elemento pivote
         elemento_pivote = tabla[fila_pivote, col_pivote]
+        
+        # Paso 5: Actualizar la tabla simplex (pivoteo) ###
         tabla[fila_pivote, :] /= elemento_pivote 
 
         for i in range(len(tabla)):
@@ -378,6 +380,7 @@ def solver_simplex_method(objetivo: list[float], restricciones: list[dict]):
                 
         iteraciones.append(tabla.copy())
 
+    # Paso 7: Interpretar los resultados
     solucion_vars = np.zeros(num_vars)
     
     for j in range(num_vars):
