@@ -13,6 +13,7 @@ class LinearSolver:
     def resolver(self):
         pass
 
+# Metodo grafico
 class GraphicSolver(LinearSolver):
     def resolver(self):
         restricciones_completas = self.restricciones + [
@@ -23,7 +24,7 @@ class GraphicSolver(LinearSolver):
         cant_restricciones = len(restricciones_completas)
         puntos = []
         
-        # Paso 1: Graficar las Restricciones
+        # Paso 1: Graficar las restricciones
         for i in range(cant_restricciones):
             for j in range(i + 1, cant_restricciones):
                 A = np.array([restricciones_completas[i]["coef"], restricciones_completas[j]["coef"]], dtype=float)
@@ -33,7 +34,7 @@ class GraphicSolver(LinearSolver):
                     pt = np.linalg.solve(A, b)
                     puntos.append(pt)
         
-        # Paso 2: Determinar la Región Factible (Filtrado de vértices válidos)
+        # Paso 2: Determinar la región factible
         puntos_factibles = []
         for pt in puntos:
             x1, x2 = pt
@@ -62,12 +63,12 @@ class GraphicSolver(LinearSolver):
         puntos_factibles = np.array(puntos_factibles)
         z_valores = []  
         
-        # Paso 3: Evaluar la Función Objetivo 
+        # Paso 3: Evaluar la funcion objetivo 
         for p in puntos_factibles:
             z = self.objetivo[0] * p[0] + self.objetivo[1] * p[1]
             z_valores.append(z)
             
-        # Paso 4: Seleccionar la Solución Óptima
+        # Paso 4: Seleccionar la solucion optima
         if self.maximizar:
             indice_optimo = np.argmax(z_valores)
         else:
@@ -83,6 +84,7 @@ class GraphicSolver(LinearSolver):
             "restricciones": self.restricciones
         }
 
+# Metodo simplex
 class SimplexSolver(LinearSolver):
     def resolver(self):
         num_vars = len(self.objetivo)
@@ -105,11 +107,10 @@ class SimplexSolver(LinearSolver):
         while True:
             fila_z = tabla[-1, :-1]
 
-            # Tolerancia para problemas de coma flotante (Criterio de parada)
             if np.all(fila_z >= -1e-9):
                 break
 
-            # Paso 3: Identificar la variable entrante y la variable saliente
+            # Paso 3: Identificar la variable entrante y saliente
             col_pivote = np.argmin(fila_z)
 
             col_valores = tabla[:-1, col_pivote]
@@ -130,7 +131,7 @@ class SimplexSolver(LinearSolver):
             # Paso 4: Identificar el elemento pivote
             elemento_pivote = tabla[fila_pivote, col_pivote]
             
-            # Paso 5: Actualizar la tabla simplex (pivoteo)
+            # Paso 5: Actualizar la tabla simplex
             tabla[fila_pivote, :] /= elemento_pivote 
 
             for i in range(len(tabla)):
@@ -162,7 +163,7 @@ class SimplexSolver(LinearSolver):
         }
 
 
-# --- INTERFAZ GRÁFICA ---
+# Interfaz grafica
 
 class LinearProgrammingApp:
     def __init__(self, root):
@@ -222,8 +223,8 @@ class LinearProgrammingApp:
         n_vars = int(self.num_vars_spin.get())
         n_restr = int(self.num_restr_spin.get())
 
-        # Función Objetivo
-        obj_frame = ttk.LabelFrame(self.inputs_frame, text=" Función Objetivo (Z) ", padding="10")
+        # Funcion Objetivo
+        obj_frame = ttk.LabelFrame(self.inputs_frame, text=" Funcion Objetivo (Z) ", padding="10")
         obj_frame.pack(fill=tk.X, pady=5)
 
         for j in range(n_vars):
@@ -283,22 +284,21 @@ class LinearProgrammingApp:
 
             if metodo == "Simplex":
                 if objetivo_tipo == "Minimizar":
-                    messagebox.showerror("Aviso", "El método simplex de este código está diseñado solo para Maximizar.")
+                    messagebox.showerror("Aviso", "El metodo simplex de este código esta diseñado solo para Maximizar.")
                     return
                 
-                # Usamos la nueva clase SimplexSolver
                 solver = SimplexSolver(objetivo, restricciones)
                 res_simplex = solver.resolver()
 
                 if res_simplex is None:
-                    messagebox.showerror("Error", "No se encontró solución factible o el problema es no acotado.")
+                    messagebox.showerror("Error", "No se encontro solución factible.")
                     return
 
                 self._mostrar_iteraciones_simplex(res_simplex, num_vars, len(restricciones))
 
             elif metodo == "Gráfico":
                 if num_vars != 2:
-                    messagebox.showerror("Error", "El método gráfico solo se puede utilizar con exactamente 2 variables.")
+                    messagebox.showerror("Error", "El metodo gráfico solo se puede utilizar con exactamente 2 variables.")
                     return
                 
                 maximizar = (objetivo_tipo == "Maximizar")
@@ -315,7 +315,7 @@ class LinearProgrammingApp:
                 self._graficar_2d(res_grafico)
 
         except ValueError:
-            messagebox.showerror("Error de Input", "Por favor ingresa valores numéricos válidos en todos los campos.")
+            messagebox.showerror("Error de Input", "Por favor ingresa valores numéricos validos en todos los campos.")
 
     def _mostrar_resultados_texto(self, resultados, num_vars, tipo_optimizacion):
         output_frame = ttk.LabelFrame(self.right_frame, text=" Resultados ", padding="10")
@@ -325,7 +325,7 @@ class LinearProgrammingApp:
         z_val = resultados["valor_optimo"]
 
         vars_str = ", ".join([f"x{i+1} = {pt_optimo[i]:.2f}" for i in range(num_vars)])
-        res_text = f" Valor Óptimo ({tipo_optimizacion} Z): {z_val:.2f}\n Variables: {vars_str}"
+        res_text = f" Valor Optimo ({tipo_optimizacion} Z): {z_val:.2f}\n Variables: {vars_str}"
 
         lbl = ttk.Label(output_frame, text=res_text, font=("Helvetica", 11, "bold"), foreground="green")
         lbl.pack(anchor=tk.W)
@@ -337,7 +337,7 @@ class LinearProgrammingApp:
         pt_optimo = res_simplex["punto_optimo"]
         z_val = res_simplex["valor_optimo"]
         vars_str = ", ".join([f"x{i+1} = {pt_optimo[i]:.2f}" for i in range(num_vars)])
-        lbl = ttk.Label(output_frame, text=f"Z Óptimo: {z_val:.2f} | Variables: {vars_str}", 
+        lbl = ttk.Label(output_frame, text=f"Z Optimo: {z_val:.2f} | Variables: {vars_str}", 
                         font=("Helvetica", 11, "bold"), foreground="green")
         lbl.pack(anchor=tk.W, pady=(0, 10))
 
@@ -363,7 +363,7 @@ class LinearProgrammingApp:
         header_str = " | ".join([f"{h:>8}" for h in headers])
 
         for idx, tabla in enumerate(iteraciones):
-            text_area.insert(tk.END, f"--- Iteración {idx} ---\n")
+            text_area.insert(tk.END, f"--- Iteracion {idx} ---\n")
             text_area.insert(tk.END, header_str + "\n")
             text_area.insert(tk.END, "-" * len(header_str) + "\n")
             
@@ -398,10 +398,10 @@ class LinearProgrammingApp:
         angulos = np.arctan2(puntos[:, 1] - centro[1], puntos[:, 0] - centro[0])
         puntos_ordenados = puntos[np.argsort(angulos)]
 
-        ax.fill(puntos_ordenados[:, 0], puntos_ordenados[:, 1], color='lightgreen', alpha=0.4, label='Región Factible')
+        ax.fill(puntos_ordenados[:, 0], puntos_ordenados[:, 1], color='lightgreen', alpha=0.4, label='Region Factible')
         ax.scatter(puntos[:, 0], puntos[:, 1], color='blue', zorder=5)
         
-        ax.scatter(optimo[0], optimo[1], color='red', s=100, zorder=6, label=f'Óptimo ({optimo[0]:.1f}, {optimo[1]:.1f})')
+        ax.scatter(optimo[0], optimo[1], color='red', s=100, zorder=6, label=f'Optimo ({optimo[0]:.1f}, {optimo[1]:.1f})')
 
         ax.set_xlim(0, max_x)
         ax.set_ylim(0, max_y)
