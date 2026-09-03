@@ -49,7 +49,7 @@ pip install numpy matplotlib
 
 ## Usage
 
-1. **Initial Setup:** Enter the number of decision variables ($n$) and constraints, then click **Generar Tabla** (Generate Table).
+1. **Initial Setup:** Enter the number of decision variables ($n$) and constraints, then click **Generar Campos** (generate fields).
 2. **Input Parameters:** Define the Objective Function coefficients ($Z$) and constraint matrix parameters along with operators (`<=`, `>=`, `=`).
 3. **Solve:** Click **Resolver Problema** (Solve Problem). 
    * For $n \ge 2$, the optimal values for all variables and maximum $Z$ will be computed via the **Simplex Method** and shown in the results panel.
