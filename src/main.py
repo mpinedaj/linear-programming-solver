@@ -163,8 +163,140 @@ class SimplexSolver(LinearSolver):
         }
 
 
-# Interfaz grafica
+# Metodo Gran M (Simplex para minimización con variables artificiales)
+class GranMSolver(LinearSolver):
+    def resolver(self):
+        M = 1e6  
+        num_vars = len(self.objetivo)
+        num_restr = len(self.restricciones)
 
+        # Paso 1: Determinar las variables de holgura, exceso y artificiales
+        slack_vars = []     
+        surplus_vars = []  
+        artificial_vars = [] 
+
+        col_index = num_vars
+        var_info = []  
+
+        for i, r in enumerate(self.restricciones):
+            if r["op"] == "<=":
+                slack_vars.append((col_index, i))
+                var_info.append(("s", i))
+                col_index += 1
+            elif r["op"] == ">=":
+                surplus_vars.append((col_index, i))
+                var_info.append(("e", i))
+                col_index += 1
+                artificial_vars.append((col_index, i))
+                var_info.append(("a", i))
+                col_index += 1
+            elif r["op"] == "=":
+                artificial_vars.append((col_index, i))
+                var_info.append(("a", i))
+                col_index += 1
+
+        total_cols = col_index + 1  
+        num_total_vars = col_index 
+
+        # Paso 2: Construir la tabla inicial
+        tabla = np.zeros((num_restr + 1, total_cols), dtype=float)
+
+        for i, r in enumerate(self.restricciones):
+            tabla[i, :num_vars] = r["coef"]
+            tabla[i, -1] = r["val"]
+
+        for col_idx, row_idx in slack_vars:
+            tabla[row_idx, col_idx] = 1.0
+
+        for col_idx, row_idx in surplus_vars:
+            tabla[row_idx, col_idx] = -1.0
+
+        for col_idx, row_idx in artificial_vars:
+            tabla[row_idx, col_idx] = 1.0
+
+        for j in range(num_vars):
+            tabla[-1, j] = self.objetivo[j]  # coeficientes de la función objetivo
+
+        for col_idx, row_idx in artificial_vars:
+            tabla[-1, col_idx] = M
+
+        for col_idx, row_idx in artificial_vars:
+            tabla[-1, :] -= M * tabla[row_idx, :]
+
+        iteraciones = []
+        iteraciones.append(tabla.copy())
+
+        # Paso 3: Iterar el simplex
+        max_iter = 100
+        for _ in range(max_iter):
+            fila_z = tabla[-1, :-1]
+
+            # Paso 4: Buscar el coeficiente más negativo
+            if np.all(fila_z >= -1e-9):
+                break
+
+            col_pivote = np.argmin(fila_z)
+
+            col_valores = tabla[:-1, col_pivote]
+            lados_derechos = tabla[:-1, -1]
+
+            cocientes = []
+            for i in range(num_restr):
+                if col_valores[i] > 1e-9:
+                    cocientes.append(lados_derechos[i] / col_valores[i])
+                else:
+                    cocientes.append(np.inf)
+
+            fila_pivote = np.argmin(cocientes)
+
+            if cocientes[fila_pivote] == np.inf:
+                return None 
+
+            elemento_pivote = tabla[fila_pivote, col_pivote]
+            tabla[fila_pivote, :] /= elemento_pivote
+
+            for i in range(len(tabla)):
+                if i != fila_pivote:
+                    factor = tabla[i, col_pivote]
+                    tabla[i, :] -= factor * tabla[fila_pivote, :]
+
+            iteraciones.append(tabla.copy())
+
+        artificial_col_indices = [col_idx for col_idx, _ in artificial_vars]
+        for col_idx in artificial_col_indices:
+            columna = tabla[:, col_idx]
+            es_uno = np.isclose(columna, 1.0)
+            es_cero = np.isclose(columna, 0.0)
+            if np.count_nonzero(es_uno) == 1 and np.count_nonzero(es_cero) == len(columna) - 1:
+                fila_uno = np.where(es_uno)[0][0]
+                if fila_uno < num_restr and tabla[fila_uno, -1] > 1e-9:
+                    return None 
+
+        # Paso 5: Extraer solución
+        solucion_vars = np.zeros(num_vars)
+        for j in range(num_vars):
+            columna = tabla[:, j]
+            es_uno = np.isclose(columna, 1.0)
+            es_cero = np.isclose(columna, 0.0)
+            if np.count_nonzero(es_uno) == 1 and np.count_nonzero(es_cero) == len(columna) - 1:
+                fila_uno = np.where(es_uno)[0][0]
+                if fila_uno < num_restr:
+                    solucion_vars[j] = tabla[fila_uno, -1]
+
+        valor_z_optimo = tabla[-1, -1]
+        valor_z_optimo = -valor_z_optimo
+
+        return {
+            "punto_optimo": solucion_vars,
+            "valor_optimo": valor_z_optimo,
+            "iteraciones": iteraciones,
+            "var_info": var_info,
+            "num_vars": num_vars,
+            "num_restr": num_restr
+        }
+
+
+# Interfaz grafica
 class LinearProgrammingApp:
     def __init__(self, root):
         self.root = root
@@ -247,7 +379,7 @@ class LinearProgrammingApp:
                 row_entries.append(e)
                 ttk.Label(restr_frame, text=f"x{j+1} +").grid(row=i, column=j*2+1)
 
-            op_combo = ttk.Combobox(restr_frame, values=["<=", ">=", "="], width=4, state="readonly")
+            op_combo = ttk.Combobox(restr_frame, values=["<=", ">="], width=4, state="readonly")
             op_combo.set("<=")
             op_combo.grid(row=i, column=n_vars*2, padx=2)
 
@@ -284,17 +416,23 @@ class LinearProgrammingApp:
 
             if metodo == "Simplex":
                 if objetivo_tipo == "Minimizar":
-                    messagebox.showerror("Aviso", "El metodo simplex de este código esta diseñado solo para Maximizar.")
-                    return
-                
-                solver = SimplexSolver(objetivo, restricciones)
-                res_simplex = solver.resolver()
+                    solver = GranMSolver(objetivo, restricciones, maximizar=False)
+                    res_simplex = solver.resolver()
 
-                if res_simplex is None:
-                    messagebox.showerror("Error", "No se encontro solución factible.")
-                    return
+                    if res_simplex is None:
+                        messagebox.showerror("Error", "No se encontró solución factible.")
+                        return
 
-                self._mostrar_iteraciones_simplex(res_simplex, num_vars, len(restricciones))
+                    self._mostrar_iteraciones_gran_m(res_simplex)
+                else:
+                    solver = SimplexSolver(objetivo, restricciones)
+                    res_simplex = solver.resolver()
+
+                    if res_simplex is None:
+                        messagebox.showerror("Error", "No se encontro solución factible.")
+                        return
+
+                    self._mostrar_iteraciones_simplex(res_simplex, num_vars, len(restricciones))
 
             elif metodo == "Gráfico":
                 if num_vars != 2:
@@ -302,8 +440,7 @@ class LinearProgrammingApp:
                     return
                 
                 maximizar = (objetivo_tipo == "Maximizar")
-                
-                # Usamos la nueva clase GraphicSolver
+            
                 solver = GraphicSolver(objetivo, restricciones, maximizar)
                 res_grafico = solver.resolver()
                 
@@ -372,6 +509,115 @@ class LinearProgrammingApp:
                 text_area.insert(tk.END, row_str + "\n")
             text_area.insert(tk.END, "\n")
         
+        text_area.config(state=tk.DISABLED)
+
+    @staticmethod
+    def _formatear_valor_m(val, M=1e6, col_width=12):
+        k = round(val / M)
+        r = val - k * M
+
+        if abs(r) < 1e-4:
+            r = 0.0
+        r = round(r, 2)
+
+        if r == int(r):
+            r = int(r)
+
+        if k == 0:
+            s = f"{r}"
+        elif r == 0:
+            if k == 1:
+                s = "M"
+            elif k == -1:
+                s = "-M"
+            else:
+                s = f"{k}M"
+        else:
+            if k == 1:
+                m_part = "M"
+            elif k == -1:
+                m_part = "-M"
+            else:
+                m_part = f"{k}M"
+
+            if r > 0:
+                s = f"{m_part}+{r}"
+            else:
+                s = f"{m_part}{r}"
+
+        return f"{s:>{col_width}}"
+
+    def _mostrar_iteraciones_gran_m(self, res_simplex):
+        output_frame = ttk.LabelFrame(self.right_frame, text=" Resultados Gran M (Minimización) ", padding="10")
+        output_frame.pack(fill=tk.BOTH, expand=True, pady=5)
+
+        num_vars = res_simplex["num_vars"]
+        pt_optimo = res_simplex["punto_optimo"]
+        z_val = res_simplex["valor_optimo"]
+        var_info = res_simplex["var_info"]
+
+        vars_str = ", ".join([f"x{i+1} = {pt_optimo[i]:.2f}" for i in range(num_vars)])
+        lbl = ttk.Label(output_frame, text=f"Z Óptimo (Min): {z_val:.2f} | Variables: {vars_str}",
+                        font=("Helvetica", 11, "bold"), foreground="green")
+        lbl.pack(anchor=tk.W, pady=(0, 10))
+
+        text_frame = ttk.Frame(output_frame)
+        text_frame.pack(fill=tk.BOTH, expand=True)
+
+        scrollbar_y = ttk.Scrollbar(text_frame, orient=tk.VERTICAL)
+        scrollbar_y.pack(side=tk.RIGHT, fill=tk.Y)
+
+        scrollbar_x = ttk.Scrollbar(text_frame, orient=tk.HORIZONTAL)
+        scrollbar_x.pack(side=tk.BOTTOM, fill=tk.X)
+
+        text_area = tk.Text(text_frame, wrap=tk.NONE, font=("Courier", 10),
+                            yscrollcommand=scrollbar_y.set, xscrollcommand=scrollbar_x.set)
+        text_area.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        scrollbar_y.config(command=text_area.yview)
+        scrollbar_x.config(command=text_area.xview)
+
+        iteraciones = res_simplex["iteraciones"]
+        M = 1e6
+        COL_W = 12
+
+        headers = [f"x{i+1}" for i in range(num_vars)]
+        s_count, e_count, a_count = 0, 0, 0
+        for tipo, _ in var_info:
+            if tipo == "s":
+                s_count += 1
+                headers.append(f"s{s_count}")
+            elif tipo == "e":
+                e_count += 1
+                headers.append(f"e{e_count}")
+            elif tipo == "a":
+                a_count += 1
+                headers.append(f"a{a_count}")
+        headers.append("CR")
+
+        header_str = " | ".join([f"{h:>{COL_W}}" for h in headers])
+
+        for idx, tabla in enumerate(iteraciones):
+            text_area.insert(tk.END, f"--- Iteración {idx} ---\n")
+            text_area.insert(tk.END, header_str + "\n")
+            text_area.insert(tk.END, "-" * len(header_str) + "\n")
+
+            for ri, row in enumerate(tabla):
+                is_z_row = (ri == len(tabla) - 1)
+                celdas = []
+                for val in row:
+                    if is_z_row and abs(val) > M * 0.5:
+                        celdas.append(self._formatear_valor_m(val, M, COL_W))
+                    else:
+                        v = round(val, 4)
+                        if v == int(v) and abs(v) < 1e9:
+                            celdas.append(f"{int(v):>{COL_W}}")
+                        else:
+                            celdas.append(f"{v:>{COL_W}.4f}")
+                row_str = " | ".join(celdas)
+                text_area.insert(tk.END, row_str + "\n")
+            text_area.insert(tk.END, "\n")
+
         text_area.config(state=tk.DISABLED)
 
     def _graficar_2d(self, res_grafico):
