@@ -1,5 +1,4 @@
 import tkinter as tk
-import tkinter as tk
 from tkinter import ttk, messagebox
 import numpy as np
 import matplotlib.pyplot as plt
@@ -162,16 +161,15 @@ class SimplexSolver(LinearSolver):
             "iteraciones": iteraciones 
         }
 
-# Metodo Gran M (Simplex para minimización con variables artificiales)
+# Metodo Gran M 
 class GranMSolver(LinearSolver):
     def resolver(self):
         M = 1e6  
         num_vars = len(self.objetivo)
         num_restr = len(self.restricciones)
 
-        # Paso 1: Determinar las variables de holgura, exceso y artificiales
-        slack_vars = []     
-        surplus_vars = []  
+        # Paso 1: Determinar las variables de holgura y artificiales
+        slack_vars = []      
         artificial_vars = [] 
 
         col_index = num_vars
@@ -179,23 +177,23 @@ class GranMSolver(LinearSolver):
 
         for i, r in enumerate(self.restricciones):
             if r["op"] == "<=":
-                slack_vars.append((col_index, i))
+                slack_vars.append((col_index, i, 1.0))
                 var_info.append(("s", i))
                 col_index += 1
             elif r["op"] == ">=":
-                surplus_vars.append((col_index, i))
-                var_info.append(("e", i))
+                slack_vars.append((col_index, i, -1.0))
+                var_info.append(("s", i))
                 col_index += 1
-                artificial_vars.append((col_index, i))
+                
+                artificial_vars.append((col_index, i, 1.0))
                 var_info.append(("a", i))
                 col_index += 1
             elif r["op"] == "=":
-                artificial_vars.append((col_index, i))
+                artificial_vars.append((col_index, i, 1.0))
                 var_info.append(("a", i))
                 col_index += 1
 
         total_cols = col_index + 1  
-        num_total_vars = col_index 
 
         # Paso 2: Construir la tabla inicial
         tabla = np.zeros((num_restr + 1, total_cols), dtype=float)
@@ -204,22 +202,19 @@ class GranMSolver(LinearSolver):
             tabla[i, :num_vars] = r["coef"]
             tabla[i, -1] = r["val"]
 
-        for col_idx, row_idx in slack_vars:
-            tabla[row_idx, col_idx] = 1.0
+        for col_idx, row_idx, val in slack_vars:
+            tabla[row_idx, col_idx] = val
 
-        for col_idx, row_idx in surplus_vars:
-            tabla[row_idx, col_idx] = -1.0
-
-        for col_idx, row_idx in artificial_vars:
-            tabla[row_idx, col_idx] = 1.0
+        for col_idx, row_idx, val in artificial_vars:
+            tabla[row_idx, col_idx] = val
 
         for j in range(num_vars):
-            tabla[-1, j] = self.objetivo[j]  # coeficientes de la función objetivo
+            tabla[-1, j] = self.objetivo[j]  
 
-        for col_idx, row_idx in artificial_vars:
+        for col_idx, row_idx, _ in artificial_vars:
             tabla[-1, col_idx] = M
 
-        for col_idx, row_idx in artificial_vars:
+        for col_idx, row_idx, _ in artificial_vars:
             tabla[-1, :] -= M * tabla[row_idx, :]
 
         iteraciones = []
@@ -261,7 +256,7 @@ class GranMSolver(LinearSolver):
 
             iteraciones.append(tabla.copy())
 
-        artificial_col_indices = [col_idx for col_idx, _ in artificial_vars]
+        artificial_col_indices = [col_idx for col_idx, _, _ in artificial_vars]
         for col_idx in artificial_col_indices:
             columna = tabla[:, col_idx]
             es_uno = np.isclose(columna, 1.0)
@@ -415,6 +410,7 @@ class LinearProgrammingApp:
 
             if metodo == "Simplex":
                 if objetivo_tipo == "Minimizar":
+                    # El Solver Gran M ahora está configurado de manera nativa para minimización
                     solver = GranMSolver(objetivo, restricciones, maximizar=False)
                     res_simplex = solver.resolver()
 
@@ -544,14 +540,12 @@ class LinearProgrammingApp:
         COL_W = 12
 
         headers = [f"x{i+1}" for i in range(num_vars)]
-        s_count, e_count, a_count = 0, 0, 0
+        s_count, a_count = 0, 0
+        
         for tipo, _ in var_info:
             if tipo == "s":
                 s_count += 1
                 headers.append(f"s{s_count}")
-            elif tipo == "e":
-                e_count += 1
-                headers.append(f"e{e_count}")
             elif tipo == "a":
                 a_count += 1
                 headers.append(f"a{a_count}")
