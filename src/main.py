@@ -1,4 +1,5 @@
 import tkinter as tk
+import tkinter as tk
 from tkinter import ttk, messagebox
 import numpy as np
 import matplotlib.pyplot as plt
@@ -103,7 +104,6 @@ class SimplexSolver(LinearSolver):
         iteraciones = []
         iteraciones.append(tabla.copy())
 
-        
         while True:
             fila_z = tabla[-1, :-1]
 
@@ -161,7 +161,6 @@ class SimplexSolver(LinearSolver):
             "valor_optimo": valor_z_optimo,
             "iteraciones": iteraciones 
         }
-
 
 # Metodo Gran M (Simplex para minimización con variables artificiales)
 class GranMSolver(LinearSolver):
@@ -511,42 +510,6 @@ class LinearProgrammingApp:
         
         text_area.config(state=tk.DISABLED)
 
-    @staticmethod
-    def _formatear_valor_m(val, M=1e6, col_width=12):
-        k = round(val / M)
-        r = val - k * M
-
-        if abs(r) < 1e-4:
-            r = 0.0
-        r = round(r, 2)
-
-        if r == int(r):
-            r = int(r)
-
-        if k == 0:
-            s = f"{r}"
-        elif r == 0:
-            if k == 1:
-                s = "M"
-            elif k == -1:
-                s = "-M"
-            else:
-                s = f"{k}M"
-        else:
-            if k == 1:
-                m_part = "M"
-            elif k == -1:
-                m_part = "-M"
-            else:
-                m_part = f"{k}M"
-
-            if r > 0:
-                s = f"{m_part}+{r}"
-            else:
-                s = f"{m_part}{r}"
-
-        return f"{s:>{col_width}}"
-
     def _mostrar_iteraciones_gran_m(self, res_simplex):
         output_frame = ttk.LabelFrame(self.right_frame, text=" Resultados Gran M (Minimización) ", padding="10")
         output_frame.pack(fill=tk.BOTH, expand=True, pady=5)
@@ -578,7 +541,6 @@ class LinearProgrammingApp:
         scrollbar_x.config(command=text_area.xview)
 
         iteraciones = res_simplex["iteraciones"]
-        M = 1e6
         COL_W = 12
 
         headers = [f"x{i+1}" for i in range(num_vars)]
@@ -602,18 +564,14 @@ class LinearProgrammingApp:
             text_area.insert(tk.END, header_str + "\n")
             text_area.insert(tk.END, "-" * len(header_str) + "\n")
 
-            for ri, row in enumerate(tabla):
-                is_z_row = (ri == len(tabla) - 1)
+            for row in tabla:
                 celdas = []
                 for val in row:
-                    if is_z_row and abs(val) > M * 0.5:
-                        celdas.append(self._formatear_valor_m(val, M, COL_W))
+                    v = round(val, 4)
+                    if v == int(v):
+                        celdas.append(f"{int(v):>{COL_W}}")
                     else:
-                        v = round(val, 4)
-                        if v == int(v) and abs(v) < 1e9:
-                            celdas.append(f"{int(v):>{COL_W}}")
-                        else:
-                            celdas.append(f"{v:>{COL_W}.4f}")
+                        celdas.append(f"{v:>{COL_W}.4f}")
                 row_str = " | ".join(celdas)
                 text_area.insert(tk.END, row_str + "\n")
             text_area.insert(tk.END, "\n")
@@ -659,7 +617,6 @@ class LinearProgrammingApp:
         canvas = FigureCanvasTkAgg(fig, master=self.right_frame)
         canvas.draw()
         canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
-
 
 if __name__ == "__main__":
     root = tk.Tk()
